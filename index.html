@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SET THE BAR · Widgets</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Montserrat:wght@400;500&family=Playfair+Display:ital@1&display=swap" rel="stylesheet">
+<!--
+  SET THE BAR — brand widgets for Notion.
+  One file, five widgets. Choose with ?w=
+    ?w=clock   time + date
+    ?w=year    Year in Blocks (365 squares)
+    ?w=week    This week in blocks (7 squares)
+    ?w=focus   Focus timer (25 / 50 min)
+    ?w=quote   Daily standard (rotates each day)
+  Options:
+    &theme=dark   force dark   (&theme=light to force light; default follows the device)
+    &bg=none      transparent background
+-->
+<style>
+  :root{
+    --ink:#050606;      /* Ultra Black */
+    --flint:#606067;    /* Flint */
+    --snow:#F2F3FA;     /* Pale Snow */
+    --line:#D9DAE3;
+    --fill:#050606;
+    --empty:#DCDDE6;
+    --bg:var(--snow);
+    --head:'Bahnschrift','Barlow Condensed','DIN Condensed','Arial Narrow',sans-serif;
+    --body:'Montserrat',system-ui,sans-serif;
+    --accent:'Playfair Display',Georgia,serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ink:#F2F3FA; --flint:#9A9BA3; --line:#2A2B2F; --fill:#F2F3FA; --empty:#2A2B2F; --bg:#191919;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#F2F3FA; --flint:#9A9BA3; --line:#2A2B2F; --fill:#F2F3FA; --empty:#2A2B2F; --bg:#191919;
+  }
+  :root[data-bg="none"]{ --bg:transparent; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--body);
+    display:flex; align-items:center; justify-content:center;
+    padding:16px; overflow:hidden; -webkit-font-smoothing:antialiased;
+  }
+  .w{width:100%;max-width:520px;text-align:center}
+  .label{
+    font-family:var(--head); font-weight:700; letter-spacing:.14em;
+    text-transform:uppercase; font-size:11px; color:var(--flint); margin-bottom:10px;
+  }
+  .big{
+    font-family:var(--head); font-weight:700; letter-spacing:-.01em;
+    font-size:clamp(40px,14vw,72px); line-height:.95; font-variant-numeric:tabular-nums;
+  }
+  .sub{font-size:12px;color:var(--flint);margin-top:8px;letter-spacing:.02em}
+  .mark{display:inline-block;width:8px;height:8px;background:var(--ink);margin-right:8px;vertical-align:1px}
+
+  /* blocks */
+  .grid{display:grid;gap:2px;margin:0 auto}
+  .grid.year{grid-template-columns:repeat(auto-fill,minmax(7px,1fr));max-width:480px}
+  .grid.week{grid-template-columns:repeat(7,1fr);gap:6px;max-width:320px}
+  .sq{aspect-ratio:1;background:var(--empty)}
+  .sq.on{background:var(--fill)}
+  .sq.today{background:transparent;outline:1.5px solid var(--ink);outline-offset:-1.5px}
+  .week .sq{display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px;
+    font-family:var(--head);font-weight:700;font-size:11px;color:var(--flint)}
+  .week .sq.on{color:var(--bg)}
+
+  /* focus */
+  .ring{position:relative;width:min(160px,48vw,52vh);aspect-ratio:1;margin:0 auto 12px}
+  .ring svg{position:absolute;inset:0;width:100%;height:100%}
+  .ring .t{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-family:var(--head);font-weight:700;font-size:clamp(28px,10vw,40px);font-variant-numeric:tabular-nums}
+  .row{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+  button{
+    font-family:var(--head);font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+    font-size:11px;padding:8px 12px;border:1.5px solid var(--ink);background:transparent;
+    color:var(--ink);cursor:pointer;border-radius:0;min-height:32px
+  }
+  button.on,button:hover{background:var(--ink);color:var(--bg)}
+  button:focus-visible{outline:2px solid var(--flint);outline-offset:2px}
+
+  /* quote */
+  .q{font-family:var(--accent);font-style:italic;font-size:clamp(18px,5.5vw,26px);line-height:1.3}
+</style>
+</head>
+<body>
+<div class="w" id="app" aria-live="polite"></div>
+<script>
+(function(){
+  var p = new URLSearchParams(location.search);
+  var w = (p.get('w') || 'clock').toLowerCase();
+  var theme = p.get('theme'); if (theme) document.documentElement.setAttribute('data-theme', theme);
+  if (p.get('bg') === 'none') document.documentElement.setAttribute('data-bg','none');
+  var app = document.getElementById('app');
+  var DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  function dayOfYear(d){ var s = new Date(d.getFullYear(),0,0); return Math.floor((d - s) / 864e5); }
+  function daysInYear(y){ return (new Date(y,1,29).getMonth() === 1) ? 366 : 365; }
+  function el(html){ app.innerHTML = html; }
+  function msToMidnight(){ var n = new Date(), m = new Date(n.getFullYear(),n.getMonth(),n.getDate()+1); return m - n + 500; }
+
+  function clock(){
+    function draw(){
+      var d = new Date();
+      var h = d.getHours(), m = String(d.getMinutes()).padStart(2,'0');
+      var ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+      el('<div class="label"><span class="mark"></span>'+DAYS[d.getDay()]+' · '+MONTHS[d.getMonth()].toUpperCase()+' '+d.getDate()+'</div>'+
+         '<div class="big">'+h+':'+m+'<span style="font-size:.35em;margin-left:6px;color:var(--flint)">'+ampm+'</span></div>'+
+         '<div class="sub">Show up. One block at a time.</div>');
+    }
+    draw(); setInterval(draw, 1000 * 15);
+  }
+
+  function year(){
+    function draw(){
+      var d = new Date(), n = dayOfYear(d), total = daysInYear(d.getFullYear()), cells = '';
+      for (var i = 1; i <= total; i++) cells += '<div class="sq'+(i < n ? ' on' : i === n ? ' today' : '')+'"></div>';
+      el('<div class="label"><span class="mark"></span>'+d.getFullYear()+' in blocks</div>'+
+         '<div class="grid year" role="img" aria-label="Day '+n+' of '+total+'">'+cells+'</div>'+
+         '<div class="sub">Day '+n+' of '+total+' · '+(total-n)+' blocks left to build</div>');
+    }
+    draw(); setTimeout(function loop(){ draw(); setTimeout(loop, msToMidnight()); }, msToMidnight());
+  }
+
+  function week(){
+    function draw(){
+      var d = new Date(), dow = (d.getDay() + 6) % 7, cells = '';
+      var L = ['M','T','W','T','F','S','S'];
+      for (var i = 0; i < 7; i++) cells += '<div class="sq'+(i < dow ? ' on' : i === dow ? ' today' : '')+'">'+L[i]+'</div>';
+      el('<div class="label"><span class="mark"></span>This week</div>'+
+         '<div class="grid week">'+cells+'</div>'+
+         '<div class="sub">'+(7-dow)+' days left. Never miss twice.</div>');
+    }
+    draw(); setTimeout(function loop(){ draw(); setTimeout(loop, msToMidnight()); }, msToMidnight());
+  }
+
+  function focus(){
+    var len = 25 * 60, left = len, timer = null, start = 0, base = left;
+    var P = 4 * 92; // perimeter of the square path
+    el('<div class="label"><span class="mark"></span>Focus block</div>'+
+       '<div class="ring"><svg viewBox="0 0 100 100" aria-hidden="true">'+
+       '<rect x="4" y="4" width="92" height="92" fill="none" stroke="var(--empty)" stroke-width="5"/>'+
+       '<rect id="bar" x="4" y="4" width="92" height="92" fill="none" stroke="var(--ink)" stroke-width="5" stroke-dasharray="'+P+'" stroke-dashoffset="0"/>'+
+       '</svg><div class="t" id="t">25:00</div></div>'+
+       '<div class="row"><button data-m="25" class="on">25</button><button data-m="50">50</button>'+
+       '<button id="go">Start</button><button id="rs">Reset</button></div>');
+    var t = document.getElementById('t'), bar = document.getElementById('bar'), go = document.getElementById('go');
+    function fmt(s){ return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+    function paint(){ t.textContent = fmt(left); bar.setAttribute('stroke-dashoffset', String(P * (1 - left/len))); document.title = timer ? fmt(left)+' · Focus' : 'SET THE BAR · Focus'; }
+    function tick(){
+      left = Math.max(0, base - Math.floor((Date.now() - start)/1000)); paint();
+      if (left === 0){ stop(); go.textContent = 'Done ■'; }
+    }
+    function stop(){ clearInterval(timer); timer = null; }
+    go.onclick = function(){
+      if (timer){ stop(); base = left; go.textContent = 'Resume'; return; }
+      if (left === 0){ left = len; }
+      base = left; start = Date.now(); timer = setInterval(tick, 250); go.textContent = 'Pause';
+    };
+    document.getElementById('rs').onclick = function(){ stop(); left = len; go.textContent = 'Start'; paint(); };
+    Array.prototype.forEach.call(document.querySelectorAll('[data-m]'), function(b){
+      b.onclick = function(){
+        stop(); len = left = +b.getAttribute('data-m') * 60; go.textContent = 'Start';
+        Array.prototype.forEach.call(document.querySelectorAll('[data-m]'), function(x){ x.classList.toggle('on', x === b); });
+        paint();
+      };
+    });
+    paint();
+  }
+
+  function quote(){
+    var Q = [
+      "You're not competing with others. You're setting the bar for yourself.",
+      "No shortcuts, no excuses. Just daily improvement.",
+      "Raise your standards. Raise your life.",
+      "Everyone's path looks different. The goal's the same: better.",
+      "Progress, not perfection.",
+      "You don't need to feel ready. You need to start.",
+      "The Minimum still counts.",
+      "Never miss twice.",
+      "Consistency over motivation.",
+      "Character over convenience.",
+      "Progress through precision.",
+      "Clarity over chaos.",
+      "Contribution over recognition.",
+      "Show up before you believe it. Belief follows.",
+      "One block at a time.",
+      "Small and steady beats big and rare.",
+      "Do the next right thing. Then the next.",
+      "Today only asks for today.",
+      "Discipline is a promise you keep to yourself.",
+      "Finish what you start, even if it's small."
+    ];
+    function draw(){
+      var d = new Date(), q = Q[dayOfYear(d) % Q.length];
+      el('<div class="label"><span class="mark"></span>Today\u2019s standard</div><div class="q">\u201C'+q+'\u201D</div><div class="sub">SET THE BAR</div>');
+    }
+    draw(); setTimeout(function loop(){ draw(); setTimeout(loop, msToMidnight()); }, msToMidnight());
+  }
+
+  ({clock:clock, year:year, week:week, focus:focus, quote:quote}[w] || clock)();
+})();
+</script>
+</body>
+</html>
